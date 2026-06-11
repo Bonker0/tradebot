@@ -144,4 +144,4 @@ def format_config_message(max_marcados, max_sofridos, min_jogos):
 
 
 def format_help_message():
-    return "BOT DE TRADE ESPORTIVO\n========================\n\n/jogos - Filtrar jogos do dia\n/analisar Time A x Time B - Analise detalhada\n/config - Ver configuracoes\n/setfiltro marcados 15 - Alterar filtro\n/help - Esta mensagem\n\nEstrategia: Lay Placar Exato\nCriterio: Over 2.5 <= 19%"
+    return "BOT DE TRADE ESPORTIVO\n========================\n\n/jogos - Filtrar jogos do dia (mostra aprovados)\n/lista - Ver TODOS os jogos analisados (aprovados e reprovados)\n/analisar Time A x Time B - Analise detalhada de um jogo\n/config - Ver configuracoes dos filtros\n/setfiltro marcados 15 - Alterar filtro Over 2.5 marcados\n/setfiltro sofridos 15 - Alterar filtro Over 2.5 sofridos\n/setfiltro jogos 8 - Alterar minimo de jogos\n/help - Esta mensagem\n\n========================\nEstrategia: Lay Placar Exato / Lay Goleada\nCriterio: Over 2.5 <= 19%\nBTTS >= 70% = Lay Placar Exato\nBTTS < 70% = Lay Goleada"

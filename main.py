@@ -46,7 +46,8 @@ async def jogos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not fixtures:
             await loading_msg.edit_text("Nenhum jogo encontrado hoje.")
             return
-        upcoming = [f for f in fixtures if f.get("fixture", {}).get("status", {}).get("short") == "NS"]
+        valid_statuses = ["NS", "TBD", "PST"]
+        upcoming = [f for f in fixtures if f.get("fixture", {}).get("status", {}).get("short") in valid_statuses]
         if not upcoming:
             await loading_msg.edit_text("Nenhum jogo pendente hoje.")
             return
