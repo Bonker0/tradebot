@@ -51,8 +51,23 @@ class TradeFilter:
         lay_3x0 = self._analyze_lay_3x0(home_over25_scored, away_over25_conceded, home_stats)
         home_avg_scored = home_stats["goals_for"]["avg_home"]
         away_avg_scored = away_stats["goals_for"]["avg_away"]
-        market_suggestion_0x3 = "LAY PLACAR EXATO" if home_avg_scored >= 1.2 else "LAY GOLEADA"
-        market_suggestion_3x0 = "LAY PLACAR EXATO" if away_avg_scored >= 1.2 else "LAY GOLEADA"
+
+        # Calcular BTTS (ambas marcam) dos ultimos jogos
+        home_btts_pct = self._calculate_btts(home_fixtures, home_id, is_home=True)
+        away_btts_pct = self._calculate_btts(away_fixtures, away_id, is_home=False)
+
+        # Decisao de mercado usando BTTS (70%+) e media de gols do time a favor
+        # Lay 0x3: time a favor = mandante. Se BTTS >= 70% -> placar exato (ambas marcam, goleada limpa rara)
+        if home_btts_pct >= 70 or home_avg_scored >= 1.2:
+            market_suggestion_0x3 = "LAY PLACAR EXATO (BTTS: " + str(home_btts_pct) + "%)"
+        else:
+            market_suggestion_0x3 = "LAY GOLEADA (BTTS: " + str(home_btts_pct) + "%)"
+
+        # Lay 3x0: time a favor = visitante. Se BTTS >= 70% -> placar exato
+        if away_btts_pct >= 70 or away_avg_scored >= 1.2:
+            market_suggestion_3x0 = "LAY PLACAR EXATO (BTTS: " + str(away_btts_pct) + "%)"
+        else:
+            market_suggestion_3x0 = "LAY GOLEADA (BTTS: " + str(away_btts_pct) + "%)"
         return {
             "fixture": fixture_info, "league": league,
             "home": {"info": home_team, "stats": home_stats, "over25_scored_home": home_over25_scored, "over25_conceded_home": home_over25_conceded, "clean_sheet_pct": home_clean_sheet_pct},
@@ -76,6 +91,36 @@ class TradeFilter:
         home_goals_0_15_pct = float(str(home_goals_0_15).replace("%", "").replace("None", "0") or "0")
         wait_15min = home_goals_0_15_pct >= 20
         return {"passes_filter": passes_filter, "home_over25_scored": home_over25_scored, "away_over25_conceded": away_over25_conceded, "risk": risk, "wait_15min": wait_15min, "home_goals_0_15_pct": home_goals_0_15_pct, "entry_type": "ESPERAR 15 MIN" if wait_15min else "ENTRADA DIRETA"}
+
+    def _calculate_btts(self, fixtures, team_id, is_home):
+        """Calcula % de jogos onde ambas as equipes marcaram."""
+        if not fixtures:
+            return 0.0
+        relevant_games = 0
+        btts_count = 0
+        for fixture in fixtures:
+            teams = fixture.get("teams", {})
+            goals = fixture.get("goals", {})
+            home_team = teams.get("home", {})
+            away_team = teams.get("away", {})
+            home_goals = goals.get("home")
+            away_goals = goals.get("away")
+            if home_goals is None or away_goals is None:
+                continue
+            if home_team.get("id") == team_id:
+                game_is_home = True
+            elif away_team.get("id") == team_id:
+                game_is_home = False
+            else:
+                continue
+            if is_home is not None and game_is_home != is_home:
+                continue
+            relevant_games += 1
+            if home_goals >= 1 and away_goals >= 1:
+                btts_count += 1
+        if relevant_games == 0:
+            return 0.0
+        return round((btts_count / relevant_games) * 100, 1)
 
     def _calculate_risk(self, over25_a, over25_b):
         avg = (over25_a + over25_b) / 2
