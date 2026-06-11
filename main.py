@@ -88,12 +88,13 @@ async def _analyze_page(update, loading_msg, page):
     end_idx = start_idx + batch_size
     batch = upcoming[start_idx:end_idx]
     if not batch:
-        await loading_msg.edit_text("Nao ha mais jogos para analisar. Total disponivel: " + str(len(upcoming)) + ". Ja analisados: " + str(start_idx))
+        await loading_msg.edit_text("Nao ha mais jogos para analisar. Total disponivel: " + str(len(upcoming)))
         return
-    await loading_msg.edit_text("Analisando jogos " + str(start_idx + 1) + " a " + str(start_idx + len(batch)) + " de " + str(len(upcoming)) + "...")
+    await loading_msg.edit_text("Analisando jogos " + str(start_idx + 1) + " a " + str(start_idx + len(batch)) + " de " + str(len(upcoming)) + " total...")
     approved_games = []
     analyzed_count = 0
     all_analyzed = []
+    no_data_count = 0
     for fixture in batch:
         try:
             teams = fixture.get("teams", {})
@@ -109,6 +110,7 @@ async def _analyze_page(update, loading_msg, page):
                     approved_games.append(analysis)
                 all_analyzed.append({"home": home_name, "away": away_name, "league": league_name, "approved": approved})
             else:
+                no_data_count += 1
                 all_analyzed.append({"home": home_name, "away": away_name, "league": league_name, "approved": None})
             await asyncio.sleep(1)
         except Exception as e:
@@ -117,7 +119,10 @@ async def _analyze_page(update, loading_msg, page):
     last_analysis_results = all_analyzed
     if not approved_games:
         header = format_daily_header(analyzed_count, 0)
-        await loading_msg.edit_text(header + "\n" + format_no_games_found())
+        extra = ""
+        if no_data_count > 0:
+            extra = "\n\nSem dados na API: " + str(no_data_count) + " jogos\n(Liga sem stats no plano gratuito)\nUse /lista para ver quais."
+        await loading_msg.edit_text(header + "\n" + format_no_games_found() + extra)
         return
     header = format_daily_header(analyzed_count, len(approved_games))
     await loading_msg.edit_text(header)
