@@ -50,6 +50,15 @@ async def jogos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not upcoming:
             await loading_msg.edit_text("Nenhum jogo pendente hoje.")
             return
+        # Priorizar ligas com mais relevancia (maior league_id tende a ser liga menor)
+        # Ordenar por pais/liga para pegar as maiores primeiro
+        priority_countries = ["World", "Brazil", "England", "Spain", "Germany", "France", "Italy", "Portugal", "Netherlands", "Sweden", "Finland", "USA", "Mexico", "Argentina", "Colombia", "Ecuador", "Canada", "South-Korea", "Japan", "Australia", "Kuwait", "Estonia"]
+        def sort_priority(f):
+            country = f.get("league", {}).get("country", "")
+            if country in priority_countries:
+                return priority_countries.index(country)
+            return 999
+        upcoming.sort(key=sort_priority)
         max_analyze = min(len(upcoming), config.MAX_JOGOS_DIA)
         await loading_msg.edit_text("Analisando " + str(max_analyze) + " jogos...")
         approved_games = []
