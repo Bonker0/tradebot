@@ -25,6 +25,9 @@ user_config = {
     "min_jogos": config.FILTRO_MIN_JOGOS_DISPUTADOS,
 }
 
+last_analysis_results = []
+last_upcoming_fixtures = []
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Bot de Trade Esportivo!\n\nCriterio: Over 2.5 <= 19%\nUse /help para comandos.")
@@ -34,84 +37,125 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(format_help_message())
 
 
-last_analysis_results = []
+async def _get_filtered_fixtures():
+    global last_upcoming_fixtures
+    today = datetime.now().strftime("%Y-%m-%d")
+    fixtures = await api.get_fixtures_today(today)
+    if not fixtures:
+        return None, "Nenhum jogo encontrado hoje."
+    valid_statuses = ["NS", "TBD", "PST", "SUSP"]
+    upcoming = [f for f in fixtures if f.get("fixture", {}).get("status", {}).get("short") in valid_statuses]
+    if not upcoming:
+        return None, "Nenhum jogo pendente hoje. Total na API: " + str(len(fixtures))
+    excluded_keywords = ["u23", "u20", "u21", "u19", "u18", "u17", "u16", "u15", "sub 23", "sub 20", "sub 21", "sub 19", "sub 18", "sub 17", "women", "feminin", "w league", "reserve", "amateur", "youth", "academy", "primavera", "juvenil", "juniores", "cadete"]
+    def is_valid_game(f):
+        league_name = f.get("league", {}).get("name", "").lower()
+        home_name = f.get("teams", {}).get("home", {}).get("name", "").lower()
+        away_name = f.get("teams", {}).get("away", {}).get("name", "").lower()
+        all_text = league_name + " " + home_name + " " + away_name
+        for kw in excluded_keywords:
+            if kw in all_text:
+                return False
+        return True
+    upcoming = [f for f in upcoming if is_valid_game(f)]
+    if not upcoming:
+        return None, "Jogos encontrados mas todos filtrados (amadores/sub)."
+    priority_countries = ["World", "Brazil", "England", "Spain", "Germany", "France", "Italy", "Portugal", "Netherlands", "Belgium", "Turkey", "Sweden", "Finland", "Denmark", "Norway", "USA", "Mexico", "Argentina", "Colombia", "Chile", "Ecuador", "Peru", "Uruguay", "Canada", "South-Korea", "Japan", "Australia", "Saudi-Arabia", "Kuwait", "UAE", "Qatar", "Estonia", "Czech-Republic", "Poland", "Greece", "Scotland", "Ireland"]
+    def sort_priority(f):
+        country = f.get("league", {}).get("country", "")
+        if country in priority_countries:
+            return priority_countries.index(country)
+        return 999
+    upcoming.sort(key=sort_priority)
+    last_upcoming_fixtures = upcoming
+    return upcoming, None
+
+
+async def _analyze_page(update, loading_msg, page):
+    global last_analysis_results, last_upcoming_fixtures
+    batch_size = config.MAX_JOGOS_DIA
+    if page == 0:
+        upcoming, error = await _get_filtered_fixtures()
+        if error:
+            await loading_msg.edit_text(error)
+            return
+    else:
+        upcoming = last_upcoming_fixtures
+        if not upcoming:
+            await loading_msg.edit_text("Use /jogos primeiro para carregar a lista de jogos.")
+            return
+    start_idx = page * batch_size
+    end_idx = start_idx + batch_size
+    batch = upcoming[start_idx:end_idx]
+    if not batch:
+        await loading_msg.edit_text("Nao ha mais jogos para analisar. Total disponivel: " + str(len(upcoming)) + ". Ja analisados: " + str(start_idx))
+        return
+    await loading_msg.edit_text("Analisando jogos " + str(start_idx + 1) + " a " + str(start_idx + len(batch)) + " de " + str(len(upcoming)) + "...")
+    approved_games = []
+    analyzed_count = 0
+    all_analyzed = []
+    for fixture in batch:
+        try:
+            teams = fixture.get("teams", {})
+            home_name = teams.get("home", {}).get("name", "?")
+            away_name = teams.get("away", {}).get("name", "?")
+            league_name = fixture.get("league", {}).get("name", "?")
+            analysis = await trade_filter.analyze_fixture(fixture)
+            if analysis:
+                analyzed_count += 1
+                filter_result = trade_filter.filter_fixtures(analysis)
+                approved = filter_result["any_approved"]
+                if approved:
+                    approved_games.append(analysis)
+                all_analyzed.append({"home": home_name, "away": away_name, "league": league_name, "approved": approved})
+            else:
+                all_analyzed.append({"home": home_name, "away": away_name, "league": league_name, "approved": None})
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.error(f"Erro: {e}")
+            continue
+    last_analysis_results = all_analyzed
+    if not approved_games:
+        header = format_daily_header(analyzed_count, 0)
+        await loading_msg.edit_text(header + "\n" + format_no_games_found())
+        return
+    header = format_daily_header(analyzed_count, len(approved_games))
+    await loading_msg.edit_text(header)
+    for game in approved_games:
+        await update.message.reply_text(format_quick_summary(game))
+        await asyncio.sleep(0.5)
+    next_cmd = ""
+    if page == 0 and end_idx < len(upcoming):
+        next_cmd = "\nUse /jogos2 para analisar mais 30 jogos."
+    elif page == 1 and end_idx < len(upcoming):
+        next_cmd = "\nUse /jogos3 para analisar mais 30 jogos."
+    await update.message.reply_text(str(len(approved_games)) + " jogos aprovados!\nUse /analisar Time x Time para detalhes.\nUse /lista para ver todos os analisados." + next_cmd)
 
 
 async def jogos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global last_analysis_results
     loading_msg = await update.message.reply_text(format_loading_message())
     try:
-        today = datetime.now().strftime("%Y-%m-%d")
-        fixtures = await api.get_fixtures_today(today)
-        if not fixtures:
-            await loading_msg.edit_text("Nenhum jogo encontrado hoje.")
-            return
-        valid_statuses = ["NS", "TBD", "PST", "SUSP"]
-        upcoming = [f for f in fixtures if f.get("fixture", {}).get("status", {}).get("short") in valid_statuses]
-        if not upcoming:
-            await loading_msg.edit_text("Nenhum jogo pendente hoje. Total de jogos na API: " + str(len(fixtures)) + ". Verifique se os jogos ja comecaram.")
-            return
-        # Filtrar jogos amadores, sub-23, sub-20, sub-18, feminino, reservas
-        excluded_keywords = ["u23", "u20", "u21", "u19", "u18", "u17", "u16", "u15", "sub 23", "sub 20", "sub 21", "sub 19", "sub 18", "sub 17", "women", "feminin", "w league", "reserve", "amateur", "youth", "academy", "primavera", "juvenil", "juniores", "cadete"]
-        def is_valid_game(f):
-            league_name = f.get("league", {}).get("name", "").lower()
-            home_name = f.get("teams", {}).get("home", {}).get("name", "").lower()
-            away_name = f.get("teams", {}).get("away", {}).get("name", "").lower()
-            all_text = league_name + " " + home_name + " " + away_name
-            for kw in excluded_keywords:
-                if kw in all_text:
-                    return False
-            return True
-        upcoming = [f for f in upcoming if is_valid_game(f)]
-        if not upcoming:
-            await loading_msg.edit_text("Jogos encontrados mas todos foram filtrados (amadores/sub). Total antes do filtro: " + str(len([f for f in fixtures if f.get('fixture', {}).get('status', {}).get('short') in valid_statuses])))
-            return
-        # Priorizar ligas com mais relevancia
-        priority_countries = ["World", "Brazil", "England", "Spain", "Germany", "France", "Italy", "Portugal", "Netherlands", "Belgium", "Turkey", "Sweden", "Finland", "Denmark", "Norway", "USA", "Mexico", "Argentina", "Colombia", "Chile", "Ecuador", "Peru", "Uruguay", "Canada", "South-Korea", "Japan", "Australia", "Saudi-Arabia", "Kuwait", "UAE", "Qatar", "Estonia", "Czech-Republic", "Poland", "Greece", "Scotland", "Ireland"]
-        def sort_priority(f):
-            country = f.get("league", {}).get("country", "")
-            if country in priority_countries:
-                return priority_countries.index(country)
-            return 999
-        upcoming.sort(key=sort_priority)
-        max_analyze = min(len(upcoming), config.MAX_JOGOS_DIA)
-        await loading_msg.edit_text("Analisando " + str(max_analyze) + " jogos...")
-        approved_games = []
-        analyzed_count = 0
-        all_analyzed = []
-        for fixture in upcoming[:max_analyze]:
-            try:
-                teams = fixture.get("teams", {})
-                home_name = teams.get("home", {}).get("name", "?")
-                away_name = teams.get("away", {}).get("name", "?")
-                league_name = fixture.get("league", {}).get("name", "?")
-                analysis = await trade_filter.analyze_fixture(fixture)
-                if analysis:
-                    analyzed_count += 1
-                    filter_result = trade_filter.filter_fixtures(analysis)
-                    approved = filter_result["any_approved"]
-                    if approved:
-                        approved_games.append(analysis)
-                    all_analyzed.append({"home": home_name, "away": away_name, "league": league_name, "approved": approved})
-                else:
-                    all_analyzed.append({"home": home_name, "away": away_name, "league": league_name, "approved": None})
-                await asyncio.sleep(1)
-            except Exception as e:
-                logger.error(f"Erro: {e}")
-                continue
-        last_analysis_results = all_analyzed
-        if not approved_games:
-            header = format_daily_header(analyzed_count, 0)
-            await loading_msg.edit_text(header + "\n" + format_no_games_found())
-            return
-        header = format_daily_header(analyzed_count, len(approved_games))
-        await loading_msg.edit_text(header)
-        for game in approved_games:
-            await update.message.reply_text(format_quick_summary(game))
-            await asyncio.sleep(0.5)
-        await update.message.reply_text(str(len(approved_games)) + " jogos aprovados!\nUse /analisar Time x Time para detalhes.\nUse /lista para ver todos os jogos analisados.")
+        await _analyze_page(update, loading_msg, page=0)
     except Exception as e:
         logger.error(f"Erro /jogos: {e}")
+        await loading_msg.edit_text(format_error_message(str(e)))
+
+
+async def jogos2(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    loading_msg = await update.message.reply_text("Buscando proximos 30 jogos...")
+    try:
+        await _analyze_page(update, loading_msg, page=1)
+    except Exception as e:
+        logger.error(f"Erro /jogos2: {e}")
+        await loading_msg.edit_text(format_error_message(str(e)))
+
+
+async def jogos3(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    loading_msg = await update.message.reply_text("Buscando proximos 30 jogos...")
+    try:
+        await _analyze_page(update, loading_msg, page=2)
+    except Exception as e:
+        logger.error(f"Erro /jogos3: {e}")
         await loading_msg.edit_text(format_error_message(str(e)))
 
 
@@ -236,6 +280,8 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("jogos", jogos))
+    application.add_handler(CommandHandler("jogos2", jogos2))
+    application.add_handler(CommandHandler("jogos3", jogos3))
     application.add_handler(CommandHandler("lista", lista))
     application.add_handler(CommandHandler("analisar", analisar))
     application.add_handler(CommandHandler("config", config_command))
