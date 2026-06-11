@@ -50,8 +50,19 @@ async def jogos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not upcoming:
             await loading_msg.edit_text("Nenhum jogo pendente hoje.")
             return
-        # Priorizar ligas com mais relevancia (maior league_id tende a ser liga menor)
-        # Ordenar por pais/liga para pegar as maiores primeiro
+        # Filtrar jogos amadores, sub-23, sub-20, sub-18, feminino, reservas
+        excluded_keywords = ["u23", "u20", "u21", "u19", "u18", "u17", "u16", "u15", "sub 23", "sub 20", "sub 21", "sub 19", "sub 18", "sub 17", "women", "feminin", "w league", "reserve", "amateur", "youth", "academy", "primavera", "juvenil", "juniores", "cadete"]
+        def is_valid_game(f):
+            league_name = f.get("league", {}).get("name", "").lower()
+            home_name = f.get("teams", {}).get("home", {}).get("name", "").lower()
+            away_name = f.get("teams", {}).get("away", {}).get("name", "").lower()
+            all_text = league_name + " " + home_name + " " + away_name
+            for kw in excluded_keywords:
+                if kw in all_text:
+                    return False
+            return True
+        upcoming = [f for f in upcoming if is_valid_game(f)]
+        # Priorizar ligas com mais relevancia
         priority_countries = ["World", "Brazil", "England", "Spain", "Germany", "France", "Italy", "Portugal", "Netherlands", "Belgium", "Turkey", "Sweden", "Finland", "Denmark", "Norway", "USA", "Mexico", "Argentina", "Colombia", "Chile", "Ecuador", "Peru", "Uruguay", "Canada", "South-Korea", "Japan", "Australia", "Saudi-Arabia", "Kuwait", "UAE", "Qatar", "Estonia", "Czech-Republic", "Poland", "Greece", "Scotland", "Ireland"]
         def sort_priority(f):
             country = f.get("league", {}).get("country", "")
