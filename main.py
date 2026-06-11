@@ -34,7 +34,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(format_help_message())
 
 
+last_analysis_results = []
+
+
 async def jogos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global last_analysis_results
     loading_msg = await update.message.reply_text(format_loading_message())
     try:
         today = datetime.now().strftime("%Y-%m-%d")
@@ -50,18 +54,28 @@ async def jogos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await loading_msg.edit_text("Analisando " + str(max_analyze) + " jogos...")
         approved_games = []
         analyzed_count = 0
+        all_analyzed = []
         for fixture in upcoming[:max_analyze]:
             try:
+                teams = fixture.get("teams", {})
+                home_name = teams.get("home", {}).get("name", "?")
+                away_name = teams.get("away", {}).get("name", "?")
+                league_name = fixture.get("league", {}).get("name", "?")
                 analysis = await trade_filter.analyze_fixture(fixture)
                 if analysis:
                     analyzed_count += 1
                     filter_result = trade_filter.filter_fixtures(analysis)
-                    if filter_result["any_approved"]:
+                    approved = filter_result["any_approved"]
+                    if approved:
                         approved_games.append(analysis)
+                    all_analyzed.append({"home": home_name, "away": away_name, "league": league_name, "approved": approved})
+                else:
+                    all_analyzed.append({"home": home_name, "away": away_name, "league": league_name, "approved": None})
                 await asyncio.sleep(1)
             except Exception as e:
                 logger.error(f"Erro: {e}")
                 continue
+        last_analysis_results = all_analyzed
         if not approved_games:
             header = format_daily_header(analyzed_count, 0)
             await loading_msg.edit_text(header + "\n" + format_no_games_found())
@@ -71,10 +85,33 @@ async def jogos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for game in approved_games:
             await update.message.reply_text(format_quick_summary(game))
             await asyncio.sleep(0.5)
-        await update.message.reply_text(str(len(approved_games)) + " jogos aprovados!\nUse /analisar Time x Time para detalhes.")
+        await update.message.reply_text(str(len(approved_games)) + " jogos aprovados!\nUse /analisar Time x Time para detalhes.\nUse /lista para ver todos os jogos analisados.")
     except Exception as e:
         logger.error(f"Erro /jogos: {e}")
         await loading_msg.edit_text(format_error_message(str(e)))
+
+
+async def lista(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global last_analysis_results
+    if not last_analysis_results:
+        await update.message.reply_text("Nenhuma analise feita ainda.\nUse /jogos primeiro.")
+        return
+    lines = ["LISTA DE JOGOS ANALISADOS", "========================", ""]
+    for i, game in enumerate(last_analysis_results, 1):
+        status = "[OK]" if game["approved"] else "[X]" if game["approved"] is False else "[?]"
+        lines.append(f"{i}. {status} {game['home']} x {game['away']} ({game['league']})")
+    lines.append("")
+    lines.append("========================")
+    lines.append("[OK] = Passou nos filtros")
+    lines.append("[X] = Reprovado")
+    lines.append("[?] = Dados insuficientes")
+    msg = "\n".join(lines)
+    if len(msg) <= 4096:
+        await update.message.reply_text(msg)
+    else:
+        parts = [msg[i:i+4000] for i in range(0, len(msg), 4000)]
+        for part in parts:
+            await update.message.reply_text(part)
 
 
 async def analisar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -175,6 +212,7 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("jogos", jogos))
+    application.add_handler(CommandHandler("lista", lista))
     application.add_handler(CommandHandler("analisar", analisar))
     application.add_handler(CommandHandler("config", config_command))
     application.add_handler(CommandHandler("setfiltro", setfiltro))
