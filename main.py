@@ -52,7 +52,7 @@ async def jogos(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         # Priorizar ligas com mais relevancia (maior league_id tende a ser liga menor)
         # Ordenar por pais/liga para pegar as maiores primeiro
-        priority_countries = ["World", "Brazil", "England", "Spain", "Germany", "France", "Italy", "Portugal", "Netherlands", "Sweden", "Finland", "USA", "Mexico", "Argentina", "Colombia", "Ecuador", "Canada", "South-Korea", "Japan", "Australia", "Kuwait", "Estonia"]
+        priority_countries = ["World", "Brazil", "England", "Spain", "Germany", "France", "Italy", "Portugal", "Netherlands", "Belgium", "Turkey", "Sweden", "Finland", "Denmark", "Norway", "USA", "Mexico", "Argentina", "Colombia", "Chile", "Ecuador", "Peru", "Uruguay", "Canada", "South-Korea", "Japan", "Australia", "Saudi-Arabia", "Kuwait", "UAE", "Qatar", "Estonia", "Czech-Republic", "Poland", "Greece", "Scotland", "Ireland"]
         def sort_priority(f):
             country = f.get("league", {}).get("country", "")
             if country in priority_countries:
