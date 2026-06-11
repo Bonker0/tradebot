@@ -46,10 +46,10 @@ async def jogos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not fixtures:
             await loading_msg.edit_text("Nenhum jogo encontrado hoje.")
             return
-        valid_statuses = ["NS", "TBD", "PST"]
+        valid_statuses = ["NS", "TBD", "PST", "SUSP"]
         upcoming = [f for f in fixtures if f.get("fixture", {}).get("status", {}).get("short") in valid_statuses]
         if not upcoming:
-            await loading_msg.edit_text("Nenhum jogo pendente hoje.")
+            await loading_msg.edit_text("Nenhum jogo pendente hoje. Total de jogos na API: " + str(len(fixtures)) + ". Verifique se os jogos ja comecaram.")
             return
         # Filtrar jogos amadores, sub-23, sub-20, sub-18, feminino, reservas
         excluded_keywords = ["u23", "u20", "u21", "u19", "u18", "u17", "u16", "u15", "sub 23", "sub 20", "sub 21", "sub 19", "sub 18", "sub 17", "women", "feminin", "w league", "reserve", "amateur", "youth", "academy", "primavera", "juvenil", "juniores", "cadete"]
@@ -63,6 +63,9 @@ async def jogos(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     return False
             return True
         upcoming = [f for f in upcoming if is_valid_game(f)]
+        if not upcoming:
+            await loading_msg.edit_text("Jogos encontrados mas todos foram filtrados (amadores/sub). Total antes do filtro: " + str(len([f for f in fixtures if f.get('fixture', {}).get('status', {}).get('short') in valid_statuses])))
+            return
         # Priorizar ligas com mais relevancia
         priority_countries = ["World", "Brazil", "England", "Spain", "Germany", "France", "Italy", "Portugal", "Netherlands", "Belgium", "Turkey", "Sweden", "Finland", "Denmark", "Norway", "USA", "Mexico", "Argentina", "Colombia", "Chile", "Ecuador", "Peru", "Uruguay", "Canada", "South-Korea", "Japan", "Australia", "Saudi-Arabia", "Kuwait", "UAE", "Qatar", "Estonia", "Czech-Republic", "Poland", "Greece", "Scotland", "Ireland"]
         def sort_priority(f):
